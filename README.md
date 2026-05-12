@@ -21,7 +21,7 @@ No trusted third party is involved at any step. The contract enforces the rules.
 ## Architecture
 
 ```
-Owner ──► deposit()  ──► VaultState (Persistent Storage, keyed by vault_id)
+Owner ──► deposit()  ──► Vault (Persistent Storage, keyed by vault_id)
 Owner ──► check_in() ──► resets last_check_in timestamp
                               │
                               ▼
@@ -44,10 +44,10 @@ Anyone ──► trigger_release()    (vault still active)
 | Data | Storage type | Why |
 |---|---|---|
 | Admin, token address, paused flag, interval bounds | **Instance** | Global config; TTL is tied to the contract instance — if the instance is live, instance storage is guaranteed accessible |
-| Per-vault state (`VaultState`) | **Persistent**, keyed by `vault_id` | One ledger entry per vault — enables parallel execution, no contention |
+| Per-vault state (`Vault`) | **Persistent**, keyed by `vault_id` | One ledger entry per vault — enables parallel execution, no contention |
 | Owner → vault ID index | **Persistent**, keyed by owner address | Must survive across ledger closings; queried infrequently |
 | Beneficiary → vault ID index | **Persistent**, keyed by beneficiary address | Same rationale as owner index |
-| Nothing | **Temporary** | No vault or balance data is stored in Temporary storage |
+| Nothing | **Temporary** | Temporary storage is permanently deleted when TTL expires and cannot be restored — the docs explicitly warn it should never be used for correctness checks |
 
 Reference: [Stellar Docs — State Archival](https://developers.stellar.org/docs/learn/fundamentals/contract-development/storage/state-archival)
 
