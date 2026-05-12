@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, panic_with_error, symbol_short, token, Address,
-    BytesN, Env, String, Vec,
+    contract, contractmeta, contracterror, contractimpl, panic_with_error, symbol_short,
+    token, Address, BytesN, Env, String, Vec,
 };
 
 mod types;
@@ -15,28 +15,29 @@ use types::{
 #[cfg(test)]
 mod test;
 
-/// Minimum RED (in ledgers) before a persistent entry is eligible for extension.
-/// At ~5 s/ledger this is ~83 minutes.
-pub const VAULT_RED_THRESHOLD: u32 = 1000;
+contractmeta!(
+    key = "name",    val = "RED-LEGEND Vault",
+    key = "version", val = "0.1.0",
+    key = "author",  val = "joel-metal",
+    key = "repo",    val = "https://github.com/joel-metal/RED-LEGEND",
+    key = "desc",    val = "Trustless dead man's switch for Stellar/Soroban"
+);
 
-/// Default persistent storage RED for vault entries, in ledgers.
-/// 200_000 ledgers × 5 s/ledger ≈ 11.6 days.
-/// Used as the floor in `vault_red_ledgers`; long-interval vaults get a larger value.
-pub const VAULT_RED_LEDGERS: u32 = 200_000;
+/// ~1 day in ledgers at 5 s/ledger.
+pub const LEDGER_DAY: u32 = 17_280;
+/// Minimum TTL for all persistent and instance entries: 30 days.
+pub const MIN_TTL: u32 = LEDGER_DAY * 30;
+/// Maximum TTL for all persistent and instance entries: 365 days.
+pub const MAX_TTL: u32 = LEDGER_DAY * 365;
 
-/// Minimum RED (in ledgers) before instance storage is eligible for extension.
-/// At ~5 s/ledger this is ~83 minutes.
-pub const INSTANCE_RED_THRESHOLD: u32 = 1000;
+/// Aliases kept for internal use — map to MIN_TTL / MAX_TTL.
+pub const VAULT_RED_THRESHOLD: u32 = MIN_TTL;
+pub const VAULT_RED_LEDGERS: u32 = MIN_TTL;
+pub const INSTANCE_RED_THRESHOLD: u32 = MIN_TTL;
+pub const INSTANCE_RED_LEDGERS: u32 = MIN_TTL;
 
-/// RED for instance storage entries, in ledgers.
-/// 200_000 ledgers × 5 s/ledger ≈ 11.6 days.
-/// Extended on every state-mutating call to keep contract instance alive.
-pub const INSTANCE_RED_LEDGERS: u32 = 200_000;
-
-/// Approximate ledger close time in seconds (Stellar mainnet ~5s).
 const LEDGER_SECOND: u32 = 5;
-/// Soroban maximum persistent entry RED in ledgers (~180 days at 5s/ledger).
-const MAX_PERSISTENT_RED: u32 = 3_110_400;
+const MAX_PERSISTENT_RED: u32 = MAX_TTL;
 
 /// Compute a persistent storage RED (in ledgers) for a vault with the given
 /// check-in interval. Applies a 2× safety buffer so storage outlives the
@@ -280,6 +281,18 @@ impl RedVaultContract {
         env.storage().instance().set(&DataKey::Admin, &pending);
         env.storage().instance().remove(&DataKey::PendingAdmin);
         env.storage().instance().extend_ttl(INSTANCE_RED_THRESHOLD, INSTANCE_RED_LEDGERS);
+    }
+
+    /// Extends the contract instance TTL. Callable by anyone — permissionless.
+    ///
+    /// Run this monthly (or via cron) to keep the contract instance alive.
+    /// Emits a ContractTTLExtended event with the current ledger sequence.
+    pub fn extend_contract_ttl(env: Env) {
+        env.storage().instance().extend_ttl(MIN_TTL, MAX_TTL);
+        env.events().publish(
+            (symbol_short!("ttl_ext"),),
+            env.ledger().sequence(),
+        );
     }
 
     // --- vault lifecycle ---

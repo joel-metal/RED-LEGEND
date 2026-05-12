@@ -1,246 +1,198 @@
-# RED-LEGEND — Micro-Endowment Check-In Vault on Stellar
+# RED-LEGEND — Trustless Dead Man's Switch on Stellar
 
 [![CI](https://github.com/joel-metal/RED-LEGEND/actions/workflows/ci.yml/badge.svg)](https://github.com/joel-metal/RED-LEGEND/actions/workflows/ci.yml)
 
-A decentralized "Dead Man's Switch" built on Stellar/Soroban smart contracts.
+**Your crypto. Your rules. Even after you're gone.**
 
-RED-LEGEND is a time-capsule vault where funds (XLM or tokenized assets) are released to a beneficiary only if the owner fails to "check in" via a Passkey-powered interface. It leverages Soroban's State Archival and RED (Time to Live) features to automate asset inheritance — no seed phrase complexity required.
-
-## 🎯 What is RED-LEGEND?
-
-RED-LEGEND turns Stellar's native state archival mechanics into a programmable inheritance trigger. Vault owners:
-
-- Deposit funds into a personal vault contract
-- Periodically "check in" to extend the contract's RED and prove liveness
-- Designate a beneficiary address for automatic release
-- Authenticate exclusively via Passkeys (WebAuthn) — no seed phrases
-
-If the owner stops checking in, the contract's RED expires and the vault automatically releases funds to the beneficiary.
-
-This Soroban implementation makes RED-LEGEND:
-
-✅ Trustless (no executor, lawyer, or coordinator needed)  
-✅ Transparent (all vault state and transfers are on-chain)  
-✅ Secure (Passkey/WebAuthn authentication, no exposed seed phrases)  
-✅ Automated (RED expiry triggers transfer without manual intervention)
+RED-LEGEND is a Soroban smart contract that holds XLM in a time-locked vault. The owner must periodically "check in" to prove they're alive. If they stop checking in, anyone can trigger the release and funds go automatically to the designated beneficiaries — no lawyers, no executors, no seed phrase exposure.
 
 ---
 
-## �️ Project Structure
+## What it does (plain English)
+
+1. **Lock** — You deposit XLM into a personal vault and name a beneficiary.
+2. **Check In** — Every N days you tap a button (signed with your Passkey) to reset the countdown.
+3. **Release** — If you miss your check-in window, the vault expires and anyone can trigger the transfer to your beneficiary.
+
+No trusted third party is involved at any step. The contract enforces the rules.
+
+---
+
+## Architecture
 
 ```
-RED-LEGEND/
-├── contracts/
-│   └── red_vault/
-│       ├── Cargo.toml
-│       └── src/
-│           ├── lib.rs       # Contract entry points & logic
-│           ├── types.rs     # Data types, storage keys, events
-│           └── test.rs      # Full test suite
-├── docs/
-│   ├── architecture.md      # System design & storage layout
-│   └── red-logic.md         # RED expiry & state archival logic
-├── scripts/
-│   ├── build.sh             # Build contract to WASM
-│   ├── test.sh              # Run test suite
-│   └── deploy_testnet.sh    # Deploy to Stellar testnet
-├── Cargo.toml               # Workspace manifest
-├── environments.toml        # Network configurations
-├── .env.example             # Environment variable template
-└── README.md
+Owner ──► deposit()  ──► VaultState (Persistent Storage, keyed by vault_id)
+Owner ──► check_in() ──► resets last_check_in timestamp
+                              │
+                              ▼
+                    deadline = last_check_in + check_in_interval
+                              │
+                    now >= deadline?
+                         │         │
+                        YES        NO
+                         │         │
+                         ▼         ▼
+Anyone ──► trigger_release()    (vault still active)
+                │
+                ▼
+     Transfer balance to beneficiaries
+     (proportional to BPS split)
+```
+
+### Storage type decisions
+
+| Data | Storage type | Why |
+|---|---|---|
+| Admin, token address, paused flag, interval bounds | **Instance** | Global config; cheap to read; one entry for the whole contract |
+| Per-vault state (`VaultState`) | **Persistent**, keyed by `vault_id` | One ledger entry per vault — enables parallel execution, no contention |
+| Owner → vault ID index | **Persistent**, keyed by owner address | Must survive across ledger closings; queried infrequently |
+| Beneficiary → vault ID index | **Persistent**, keyed by beneficiary address | Same rationale as owner index |
+| Nothing | **Temporary** | No vault or balance data is stored in Temporary storage |
+
+Reference: [Stellar Docs — State Archival](https://developers.stellar.org/docs/learn/encyclopedia/storage/state-archival)
+
+---
+
+## Why expiry is timestamp-based, not TTL-based
+
+The Stellar docs explicitly state:
+
+> "Entry TTL exhaustion should **never** be relied on for functionality or safety."
+
+Anyone on the network can call `ExtendFootprintTTLOp` on any ledger entry without authorization, silently keeping a vault alive forever. RED-LEGEND therefore uses **ledger timestamps** stored inside contract state:
+
+```rust
+// is_expired() — the only expiry check in the contract
+pub fn is_expired(env: Env, vault_id: u64) -> bool {
+    let vault = Self::load_vault(&env, vault_id);
+    env.ledger().timestamp() >= vault.last_check_in + vault.check_in_interval
+}
+```
+
+TTL (`extend_ttl`) is used **only** to keep ledger entries from being archived — never as a trigger condition.
+
+---
+
+## TTL maintenance
+
+The contract instance and vault entries must be periodically refreshed to avoid archival.
+
+| Entry | TTL | Who refreshes |
+|---|---|---|
+| Contract instance | 30–365 days | `extend_contract_ttl()` — permissionless, run monthly |
+| Vault entries | Refreshed on every mutation | Automatic — every `deposit`, `check_in`, `withdraw`, etc. calls `extend_ttl` |
+
+**Run monthly via cron:**
+```bash
+0 0 1 * * /path/to/scripts/extend-ttl.sh
 ```
 
 ---
 
-## � Quick Start
-
-### Prerequisites
-
-- Rust (1.70+)
-- Soroban CLI
-- Stellar CLI
-
-### Build
+## Deploy on testnet
 
 ```bash
-./scripts/build.sh
-```
-
-### Test
-
-```bash
-./scripts/test.sh
-```
-
-### Setup Environment
-
-```bash
-cp .env.example .env
-```
-
-```env
-STELLAR_NETWORK=testnet
-STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-CONTRACT_RED_VAULT=<your-contract-id>
-REMINDER_EMAIL_API_KEY=<your-key>
-REMINDER_SMS_API_KEY=<your-key>
-```
-
-### Deploy to Testnet
-
-```bash
+# 1. Generate a deployer key
 stellar keys generate deployer --network testnet
-./scripts/deploy_testnet.sh
+
+# 2. Fund it
+stellar keys fund deployer --network testnet
+
+# 3. Copy and fill in .env
+cp .env.example .env
+
+# 4. Deploy + initialize
+./scripts/deploy.sh
 ```
+
+The script builds the WASM, deploys, initializes the contract, sets interval bounds, and writes `CONTRACT_RED_VAULT` to `.env` and `VITE_CONTRACT_ID` to `frontend/.env`.
 
 ---
 
-## 🎓 Contract API & Code Snippets
-
-### Initialize
-
-```rust
-// One-time setup — sets XLM token address and admin
-red_vault::initialize(env, xlm_token, admin);
-```
-
-### Create a Vault
-
-```rust
-// Returns a unique vault_id
-// check_in_interval is in seconds (e.g. 604800 = 7 days)
-let vault_id = red_vault::create_vault(
-    env,
-    owner,       // Address — must authorize
-    beneficiary, // Address — receives funds on expiry
-    604_800u64,  // check_in_interval in seconds
-);
-```
-
-### Deposit Funds
-
-```rust
-// Deposit 10 XLM (in stroops: 1 XLM = 10_000_000)
-red_vault::deposit(env, vault_id, from, 100_000_000i128);
-
-// Batch deposit into multiple vaults in one transfer
-red_vault::batch_deposit(env, from, vec![
-    (vault_id_1, 50_000_000i128),
-    (vault_id_2, 50_000_000i128),
-]);
-```
-
-### Check In (Reset Expiry Timer)
-
-```rust
-// Owner proves liveness — resets the RED countdown
-red_vault::check_in(env, vault_id, caller)?;
-```
-
-### Trigger Release (After Expiry)
-
-```rust
-// Anyone can call this once the vault has expired
-// Funds are sent to beneficiary (or split by BPS if multi-beneficiary)
-red_vault::trigger_release(env, vault_id);
-```
-
-### Multi-Beneficiary Split
-
-```rust
-// Split funds 70/30 between two beneficiaries
-red_vault::set_beneficiaries(env, vault_id, caller, vec![
-    BeneficiaryEntry { address: alice, bps: 7_000 },
-    BeneficiaryEntry { address: bob,   bps: 3_000 },
-])?;
-```
-
-### Partial Release
-
-```rust
-// Send a portion to beneficiary while keeping vault active
-red_vault::partial_release(env, vault_id, 50_000_000i128)?;
-```
-
-### Withdraw (Owner)
-
-```rust
-// Owner reclaims funds from an active vault
-red_vault::withdraw(env, vault_id, caller, 50_000_000i128)?;
-```
-
-### Query Vault State
-
-```rust
-// Get full vault struct
-let vault: Vault = red_vault::get_vault(env, vault_id);
-
-// Check seconds remaining before expiry (None if already expired)
-let remaining: Option<u64> = red_vault::get_red_remaining(env, vault_id);
-
-// Check if vault has expired
-let expired: bool = red_vault::is_expired(env, vault_id);
-
-// Get release status: Locked | Released | Cancelled
-let status: ReleaseStatus = red_vault::get_release_status(env, vault_id);
-
-// List all vault IDs owned by an address (paginated)
-let ids: Vec<u64> = red_vault::get_vaults_by_owner(env, owner, None, 0, 10);
-```
-
-### Monitor Expiry
-
-```rust
-// Emits a warning event if vault is within 24h of expiry
-// Returns remaining seconds (0 if expired)
-let ttl_secs: u64 = red_vault::ping_expiry(env, vault_id);
-```
-
-### Admin Controls
-
-```rust
-// Pause / unpause all state-mutating operations
-red_vault::pause(env);
-red_vault::unpause(env);
-
-// Two-step admin transfer
-red_vault::propose_admin(env, new_admin);
-red_vault::accept_admin(env); // called by new_admin
-
-// Set global check-in interval bounds
-red_vault::set_min_check_in_interval(env, 3_600u64);   // 1 hour min
-red_vault::set_max_check_in_interval(env, 31_536_000u64); // 1 year max
-```
-
----
-
-## 📖 Documentation
-
-- [Architecture Overview](docs/architecture.md)
-- [RED & State Archival Logic](docs/red-logic.md)
-- [Security Policy](SECURITY.md)
-
----
-
-## 🧪 Testing
+## Run tests
 
 ```bash
 cargo test
 ```
 
+Tests are organized into modules in `contracts/red_vault/src/test.rs`:
+
+| Module | What it covers |
+|---|---|
+| `core_happy_paths` | initialize, create_vault, deposit, check_in, trigger_release, withdraw |
+| `expiry_and_timing` | is_expired, timestamp simulation, deadline math, double-release |
+| `multi_beneficiary` | set_beneficiaries, BPS splits, dust handling |
+| `partial_release` | partial transfers, balance checks, expiry guard |
+| `admin_controls` | pause/unpause, two-step admin transfer, interval bounds |
+| `storage_and_ttl` | separate persistent entries, extend_contract_ttl |
+| `edge_cases` | zero amounts, invalid intervals, pagination, uniqueness |
+
 ---
 
-## 🌍 Why This Matters
+## Run frontend
 
-Over $140 billion in crypto assets are estimated to be permanently lost due to inaccessible wallets. RED-LEGEND provides a trustless, on-chain inheritance mechanism — no executor, no lawyer, no seed phrase exposure.
+```bash
+cd frontend
+cp .env.example .env
+# Set VITE_CONTRACT_ID in frontend/.env
+npm install
+npm run dev
+```
+
+Frontend stack: React 18 + TypeScript + Vite + TailwindCSS + `@stellar/stellar-sdk` + `@simplewebauthn/browser`.
 
 ---
 
-## 📄 License
+## Security model
 
-MIT License — see the [LICENSE](LICENSE) file for details.
+**What the contract can do:**
+- Hold and transfer XLM on behalf of the vault owner
+- Release funds to beneficiaries after the check-in deadline passes
+- Enforce BPS splits with integer arithmetic (last beneficiary absorbs rounding dust)
 
-## 🙏 Acknowledgments
+**What the contract cannot do:**
+- Know whether the owner is actually dead (no oracle)
+- Prevent the owner from withdrawing funds before expiry
+- Prevent a beneficiary from immediately re-depositing funds elsewhere
 
-- [Stellar Development Foundation](https://stellar.org) for Soroban
-- The WebAuthn/Passkey standards community
+**Auth model:**
+- `deposit`, `check_in`, `withdraw`, `partial_release`, `set_beneficiaries` — require vault owner auth
+- `trigger_release` — permissionless (anyone can call on an expired vault)
+- `pause`, `unpause`, `propose_admin`, `set_*_interval` — require admin auth
+- `extend_contract_ttl` — permissionless
+
+See [SECURITY.md](SECURITY.md) for the responsible disclosure policy.
+
+---
+
+## Project structure
+
+```
+RED-LEGEND/
+├── contracts/red_vault/src/
+│   ├── lib.rs       # Contract entry points, all public functions
+│   ├── types.rs     # DataKey, Vault, BeneficiaryEntry, events
+│   └── test.rs      # 54 tests across 7 modules
+├── frontend/        # React + TypeScript + Vite frontend
+├── scripts/
+│   ├── deploy.sh        # Build, deploy, initialize
+│   ├── extend-ttl.sh    # Monthly TTL refresh
+│   └── monitor.sh       # Vault expiry monitoring + webhook alerts
+├── .env.example
+└── README.md
+```
+
+---
+
+## Known limitations & roadmap
+
+- **No on-chain reminder system** — the frontend polls for expiry; a separate off-chain cron job is needed for email/SMS reminders
+- **Testnet only** — no security audit has been performed; do not use on mainnet
+- **No oracle** — the contract cannot verify real-world death; it only enforces the check-in deadline
+- **Passkey signing** — currently uses WebAuthn as a UX gate with Freighter for actual Stellar signing; full P-256 native signing requires a secp256r1 verifier contract
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

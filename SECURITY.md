@@ -1,100 +1,52 @@
 # Security Policy
 
-## Overview
-
-The RED-LEGEND smart contract handles real XLM (Stellar Lumens) and implements time-locked vaults with beneficiary distributions. Security is critical to protect user funds and ensure the integrity of the contract.
-
-## Supported Versions
-
-| Version | Supported          |
-| ------- | ------------------ |
-| Latest  | :white_check_mark: |
-| < Latest| :x:                |
-
-Only the latest version of the contract is supported. Users should always deploy the most recent audited version.
-
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security vulnerability, please follow responsible disclosure practices.
+If you discover a security vulnerability in RED-LEGEND, please **do not open a public GitHub issue**.
 
-### How to Report
+Report it privately by emailing the maintainer or opening a [GitHub Security Advisory](https://github.com/joel-metal/RED-LEGEND/security/advisories/new).
 
-**DO NOT** open a public GitHub issue for security vulnerabilities.
+Include:
+- A description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Any suggested fix (optional)
 
-Instead, please report vulnerabilities via one of the following methods:
-
-1. **Email**: Send details to [security@red-legend.example.com](mailto:security@red-legend.example.com)
-2. **Encrypted Communication**: Use our PGP key available at [https://red-legend.example.com/security-key.asc](https://red-legend.example.com/security-key.asc)
-
-### What to Include
-
-When reporting a vulnerability, please include:
-
-- Description of the vulnerability
-- Steps to reproduce the issue
-- Potential impact on user funds
-- Suggested fix (if available)
-- Your contact information for follow-up
-
-### Response Timeline
-
-- **Initial Response**: Within 48 hours of receipt
-- **Status Update**: Within 7 days
-- **Fix Timeline**: Depends on severity, typically 14-30 days for critical issues
-
-### Severity Levels
-
-- **Critical**: Immediate fund loss or unauthorized access to user funds
-- **High**: Potential fund loss or contract manipulation
-- **Medium**: Contract functionality issues without direct fund risk
-- **Low**: Minor issues or improvements
-
-## Security Measures
-
-### Pre-Mainnet Audit Requirement
-
-**IMPORTANT**: Before deploying to mainnet, the contract MUST undergo a comprehensive security audit by a reputable third-party auditor. No mainnet deployment should occur without:
-
-1. Complete code review
-2. Formal security audit report
-3. Resolution of all critical and high-severity findings
-4. Community review period
-
-### Current Security Features
-
-- **Authorization Checks**: All sensitive operations require proper authentication
-- **Error Handling**: Structured error codes for reliable client-side error handling
-- **Time-Lock Mechanism**: Funds are locked until specified conditions are met
-- **Beneficiary Protection**: Multiple beneficiaries with BPS-based distribution
-- **Pause Functionality**: Admin can pause contract in emergency situations
-
-### Best Practices for Users
-
-1. **Verify Contract Address**: Always confirm you're interacting with the official contract
-2. **Check Parameters**: Double-check all transaction parameters before signing
-3. **Monitor Expiry**: Use `ping_expiry` to monitor vault RED status
-4. **Use View Functions**: Check vault status before executing state-changing operations
-
-## Bug Bounty Program
-
-We are considering implementing a bug bounty program for security researchers. Details will be announced once the program is established.
-
-## Security Updates
-
-Security updates and announcements will be published through:
-
-- GitHub Security Advisories
-- Official project communication channels
-- Contract upgrade notifications (when applicable)
-
-## Contact
-
-For general security questions or concerns: [security@red-legend.example.com](mailto:security@red-legend.example.com)
-
-## Acknowledgments
-
-We thank the security research community for their contributions to keeping this project secure.
+You will receive a response within 72 hours. We will coordinate a fix and disclosure timeline with you.
 
 ---
 
-**Last Updated**: 2026-03-27
+## Scope
+
+### In scope
+- `contracts/red_vault/src/lib.rs` — all public contract functions
+- `contracts/red_vault/src/types.rs` — data structures
+- Frontend authentication flows (`frontend/src/lib/passkey.ts`, `useAuth.ts`)
+- Incorrect BPS arithmetic leading to fund loss
+- Auth bypass on owner-only functions
+- Reentrancy or double-spend vectors
+
+### Out of scope
+- **Testnet deployments** — this contract has not been audited and is testnet-only
+- Issues requiring physical access to the user's device
+- Social engineering attacks
+- Stellar network-level issues (report those to the [Stellar Bug Bounty](https://www.stellar.org/bug-bounty-program))
+
+---
+
+## Known risks
+
+| Risk | Mitigation |
+|---|---|
+| Owner key compromise | Attacker can withdraw all funds before expiry. Use hardware wallet. |
+| Beneficiary address error | Funds sent to wrong address are unrecoverable. Double-check before creating vault. |
+| Reminder system failure | No on-chain reminder exists. Owner must maintain their own check-in schedule. |
+| No oracle for real-world death | Contract only enforces the check-in deadline, not actual death. |
+| TTL exhaustion attack | **Not applicable** — expiry is timestamp-based, not TTL-based. Anyone extending TTL cannot prevent or delay release. |
+| Admin key compromise | Admin can pause the contract but cannot access vault funds. Two-step admin transfer reduces risk. |
+
+---
+
+## Audit status
+
+**No security audit has been performed.** Do not use this contract on Stellar mainnet or with real funds until a professional audit is completed.

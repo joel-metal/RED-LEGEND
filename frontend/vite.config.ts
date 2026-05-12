@@ -7,11 +7,10 @@ export default defineConfig({
     global: 'globalThis',
   },
   resolve: {
-    alias: {
-      buffer: 'buffer',
-    },
+    alias: { buffer: 'buffer' },
   },
   optimizeDeps: {
     include: ['buffer'],
   },
+  envPrefix: 'VITE_',
 });
