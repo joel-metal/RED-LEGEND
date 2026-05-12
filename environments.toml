@@ -1,14 +1,40 @@
-# Network configuration
-STELLAR_NETWORK=testnet
-STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+# environments.toml — Scaffold Stellar environment configuration
+# Docs: https://developers.stellar.org/docs/tools/scaffold-stellar
 
-# Contract addresses (after deployment)
-CONTRACT_RED_VAULT=<your-contract-id>
+[environments.development]
+network = "standalone"
+rpc_url = "http://localhost:8000/soroban/rpc"
+network_passphrase = "Standalone Network ; February 2017"
 
-# Frontend configuration
-VITE_STELLAR_NETWORK=testnet
-VITE_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+  [environments.development.accounts]
+  admin   = { default = true }
+  alice   = {}
+  bob     = {}
 
-# Backend (reminder service)
-REMINDER_EMAIL_API_KEY=<your-key>
-REMINDER_SMS_API_KEY=<your-key>
+  [environments.development.contracts.red_vault]
+  workspace_root = true
+
+[environments.testnet]
+network = "testnet"
+rpc_url = "https://soroban-testnet.stellar.org"
+network_passphrase = "Test SDF Network ; September 2015"
+
+  [environments.testnet.accounts]
+  admin = { default = true }
+
+  [environments.testnet.contracts.red_vault]
+  workspace_root = true
+  # Populated by deploy.sh after first deployment:
+  # address = "C..."
+
+[environments.mainnet]
+network = "mainnet"
+rpc_url = "https://soroban-rpc.stellar.org"
+network_passphrase = "Public Global Stellar Network ; September 2015"
+
+  [environments.mainnet.accounts]
+  admin = { default = true }
+
+  [environments.mainnet.contracts.red_vault]
+  workspace_root = true
+  # address = "C..."

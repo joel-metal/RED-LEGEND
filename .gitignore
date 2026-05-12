@@ -1,1 +1,6 @@
 target/
+.env
+frontend/.env
+frontend/node_modules/
+frontend/dist/
+packages/

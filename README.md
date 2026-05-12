@@ -89,6 +89,25 @@ The contract instance and vault entries must be periodically refreshed to avoid 
 
 ---
 
+## Scaffold Stellar
+
+This project is compatible with [Scaffold Stellar](https://scaffoldstellar.org). Install the CLI and use it for local development, hot reloading, and auto-generated TypeScript clients:
+
+```bash
+# Install
+cargo install --locked stellar-scaffold-cli
+
+# Build contracts + generate typed TS clients into packages/
+stellar scaffold build --env testnet
+
+# Development mode with hot reloading
+stellar scaffold watch --env development
+```
+
+Environment configuration lives in `environments.toml` — three environments are defined: `development` (local), `testnet`, and `mainnet`. Switch between them by setting `STELLAR_ENV` in your `.env`.
+
+---
+
 ## Deploy on testnet
 
 ```bash
