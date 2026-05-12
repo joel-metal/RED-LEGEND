@@ -43,13 +43,13 @@ Anyone ──► trigger_release()    (vault still active)
 
 | Data | Storage type | Why |
 |---|---|---|
-| Admin, token address, paused flag, interval bounds | **Instance** | Global config; cheap to read; one entry for the whole contract |
+| Admin, token address, paused flag, interval bounds | **Instance** | Global config; TTL is tied to the contract instance — if the instance is live, instance storage is guaranteed accessible |
 | Per-vault state (`VaultState`) | **Persistent**, keyed by `vault_id` | One ledger entry per vault — enables parallel execution, no contention |
 | Owner → vault ID index | **Persistent**, keyed by owner address | Must survive across ledger closings; queried infrequently |
 | Beneficiary → vault ID index | **Persistent**, keyed by beneficiary address | Same rationale as owner index |
 | Nothing | **Temporary** | No vault or balance data is stored in Temporary storage |
 
-Reference: [Stellar Docs — State Archival](https://developers.stellar.org/docs/learn/encyclopedia/storage/state-archival)
+Reference: [Stellar Docs — State Archival](https://developers.stellar.org/docs/learn/fundamentals/contract-development/storage/state-archival)
 
 ---
 
@@ -140,6 +140,11 @@ npm run dev
 ```
 
 Frontend stack: React 18 + TypeScript + Vite + TailwindCSS + `@stellar/stellar-sdk` + `@simplewebauthn/browser`.
+
+> **Tip:** The compiled contract Wasm embeds a `contractspecv0` section (Stellar's on-chain ABI). You can auto-generate a fully-typed TypeScript client from it instead of hand-writing `lib/contract.ts`:
+> ```bash
+> stellar contract bindings typescript --contract-id $CONTRACT_RED_VAULT --network testnet --output-dir frontend/src/lib/generated
+> ```
 
 ---
 
