@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { color-scheme: dark; }
+  body { @apply bg-brand-charcoal text-white min-h-screen; }
+  input, select, textarea {
+    @apply bg-brand-surface border border-brand-border rounded-lg px-3 py-2 text-white
+           placeholder-gray-500 focus:outline-none focus:border-brand-red w-full;
+  }
+  button:disabled { @apply opacity-50 cursor-not-allowed; }
+}
